@@ -9,7 +9,7 @@ local function color(hex: string): Color3
 end
 local palette: {[string]: Color3} = {
  skin = color("F3B980"), cloth = color("238577"), sleeve = color("40B49A"),
- gold = color("F5BC65"), dark = color("102929"), enamel = color("DCEBE1"),
+ gold = color("F5BC65"), point = color("FF253E"), pointRim = color("FFCFD2"), dark = color("102929"), enamel = color("DCEBE1"),
 }
 local function block(parent: Instance, name: string, size: Vector3, at: Vector3, tint: Color3): Part
  local part = Instance.new("Part")
@@ -121,10 +121,10 @@ local function setMarkers(view: View, ids: {string})
   local p = Data.byId[id]
   local normal = Rig.normals[Rig.pointView(p)]
   local at = Rig.pointPosition(p) + normal*.085
-  local point = block(view.model,p.name,v(.18,.18,.18),at,palette.gold)
-  point.Shape = Enum.PartType.Ball
+  local point = block(view.model,p.name,v(.24,.24,.24),at,palette.point)
+  point.Shape, point.Material = Enum.PartType.Ball, Enum.Material.Neon
   table.insert(view.marks, point)
-  local outline = block(view.model,"Meridian glow",v(.31,.31,.31),at,palette.gold)
+  local outline = block(view.model,"Meridian glow",v(.34,.34,.34),at,palette.pointRim)
   outline.Shape, outline.Transparency = Enum.PartType.Ball,.69
   table.insert(view.marks, outline)
  end

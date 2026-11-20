@@ -13,7 +13,7 @@ local Rules = require(script.Parent.Rules)
 type Entry = {
  player: Player, qi: number, alive: boolean, delta: number, cheers: number,
  status: Protocol.Status, step: number, region: string?, lockUntil: number,
- lastInput: number, finish: number?, message: string,
+ lastInput: number, studyReady: boolean?, finish: number?, message: string,
 }
 
 local function makeRemote(name: string, parent: Folder): RemoteEvent
@@ -28,6 +28,7 @@ local macro = makeRemote("SelectRegion", network)
 local needle = makeRemote("PlaceNeedle", network)
 local back = makeRemote("Back", network)
 local queue = makeRemote("Queue", network)
+local studyReady = makeRemote("StudyReady", network)
 local cheer = makeRemote("Cheer", network)
 local get = Instance.new("RemoteFunction")
 get.Name, get.Parent = "GetSnapshot", network
@@ -59,6 +60,16 @@ local function contestants(): {Entry}
   if entry and entry.alive and entry.player.Parent == Players then table.insert(list, entry) end
  end
  return list
+end
+
+
+local function studyProgress(): (number, number, number)
+ local active = contestants()
+ local ready = 0
+ for _, entry in ipairs(active) do
+  if entry.studyReady then ready += 1 end
+ end
+ return ready, math.ceil(#active / 2), #active
 end
 
 local function queued(): {Player}
@@ -93,8 +104,13 @@ local function snapshot(player: Player): Protocol.Snapshot
  if phase == "Action" or phase == "Recap" then
   for _, id in ipairs(targets) do table.insert(clues, Data.byId[id].dialogue) end
  end
+ local study = nil
+ if phase == "Memory" then
+  local ready, required = studyProgress()
+  study = {ready = ready, required = required, voted = entry ~= nil and entry.studyReady == true}
+ end
  return {
-  revision = revision, phase = phase, deadline = deadline, roundStart = roundStart,
+  study = study, revision = revision, phase = phase, deadline = deadline, roundStart = roundStart,
   round = round, roundId = roundId, active = entry ~= nil and entry.alive, dynamic = round >= 6 and not overtime,
   overtime = overtime, pool = if phase == "Memory" then pool else {},
   clues = clues, reveal = if phase == "Recap" then targets else {},
@@ -119,6 +135,14 @@ local function transition(nextPhase: Protocol.Phase, duration: number)
  deadline = if duration > 0 then now() + duration else 0
  if nextPhase == "Action" then roundStart = deadline - duration end
  publish(nil)
+end
+
+local function startStudyCountdown(): boolean
+ if phase ~= "Memory" or deadline > 0 then return false end
+ local ready, required, total = studyProgress()
+ if total < 2 or ready < required then return false end
+ transition("Memory", Protocol.memory)
+ return true
 end
 
 local function waitPhase(early: (() -> boolean)?)
@@ -237,6 +261,14 @@ queue.OnServerEvent:Connect(function(player: Player, ready: any)
  publish(nil)
 end)
 
+studyReady.OnServerEvent:Connect(function(player: Player, studyId: any)
+ if phase ~= "Memory" or deadline > 0 or studyId ~= roundId then return end
+ local entry = entries[player.UserId]
+ if not entry or entry.player ~= player or not entry.alive or entry.studyReady then return end
+ entry.studyReady = true
+ if not startStudyCountdown() then publish(nil) end
+end)
+
 cheer.OnServerEvent:Connect(function(player: Player, target: any)
  local source = entries[player.UserId]
  if phase ~= "Action" or (source and source.alive) or type(target) ~= "number" or not HitRules.finite(target) then return end
@@ -262,7 +294,9 @@ Players.PlayerRemoving:Connect(function(player)
  if entry then
   entry.alive, entry.status, entry.message = false, "Watching", "Left the clinic."
  end
- task.defer(publish, nil)
+ task.defer(function()
+  if not startStudyCountdown() then publish(nil) end
+ end)
 end)
 
 local function startRound()
@@ -273,7 +307,7 @@ local function startRound()
   e.finish, e.delta, e.message = nil, 0, ""
  end
  matchMessage = if overtime then "First valid placement wins." else ""
- transition("Action", if overtime then Protocol.overtime else Protocol.action)
+ transition("Action", if overtime then Protocol.overtime elseif round == 1 then Protocol.firstAction else Protocol.action)
 end
 
 local function roundDone(): boolean
@@ -333,9 +367,11 @@ while true do
   local showMemory = round == 1 or round == 3 or (round >= 7 and (round - 7) % 3 == 0 and #pool < #Data.points)
   if not overtime and showMemory then
    if round > 1 then expand(3) end
-   for _, e in ipairs(contestants()) do e.message = "" end
-   matchMessage = if round == 1 then "Study the markers before the round starts." else "New points added. Review the expanded atlas."
-   transition("Memory", Protocol.memory)
+   for _, e in ipairs(contestants()) do e.message, e.studyReady = "", false end
+   matchMessage = ""
+   roundId = HttpService:GenerateGUID(false)
+   transition("Memory", 0)
+   while deadline == 0 and #contestants() > 1 do task.wait(0.08) end
    waitPhase(function() return #contestants() <= 1 end)
    if #contestants() <= 1 then break end
   end

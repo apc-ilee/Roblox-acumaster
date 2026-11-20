@@ -27,6 +27,7 @@ local macroRemote = wire:WaitForChild("SelectRegion") :: RemoteEvent
 local needleRemote = wire:WaitForChild("PlaceNeedle") :: RemoteEvent
 local backRemote = wire:WaitForChild("Back") :: RemoteEvent
 local queueRemote = wire:WaitForChild("Queue") :: RemoteEvent
+local studyRemote = wire:WaitForChild("StudyReady") :: RemoteEvent
 local cheerRemote = wire:WaitForChild("Cheer") :: RemoteEvent
 
 pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList,false) end)
@@ -54,7 +55,7 @@ local lessonIndex = 1
 local selected = 1
 local side = "Front"
 local views = {"Front","Back","Top","Sole"}
-local reduceMotion, compact, hasButtons = false, false, false
+local reduceMotion, compact = false, false
 local cursor: Vector2? = nil
 local touch: InputObject? = nil
 local touchStart: Vector2? = nil
@@ -85,7 +86,7 @@ local function orbit(by: number)
  turn(views[(index-1+by)%#views+1],true)
 end
 
-local phaseLabels = {Lobby="CLINIC LOBBY",Intermission="GET READY",Memory="STUDY PHASE",Action="DIAGNOSE",Recap="ROUND RECAP",Victory="CLINIC CLOSED"}
+local phaseLabels = {Lobby="LOBBY",Intermission="GET READY",Memory="STUDY",Action="DIAGNOSE",Recap="RECAP",Victory="RESULT"}
 local regionLabels: {[string]: string} = {Head="Head",Torso="Torso",LeftArm="Left arm",RightArm="Right arm",LeftLeg="Left leg",RightLeg="Right leg"}
 local function goPoint(id: string)
  local point = Data.byId[id]
@@ -105,23 +106,20 @@ local function updateList(ids: {string}?, showRoster: boolean, canCheer: boolean
  local key = table.concat(fragments,"|")
  if key == cachedList then return end
  cachedList = key
- local scroll = ui.list.CanvasPosition
  for _, item in ipairs(ui.list:GetChildren()) do
   if item:IsA("GuiObject") then item:Destroy() end
  end
- ui.list.CanvasPosition = scroll
  if ids then
   for i, id in ipairs(ids) do
    local point = Data.byId[id]
-   local row = ClinicUI.button(ui.list,"",0,0,0,43,i == selected)
-   row.Size, row.LayoutOrder = UDim2.new(1,-7,0,43),i
+   local row = ClinicUI.button(ui.list,"",0,0,0,91,i == selected)
+   row.Size, row.LayoutOrder = UDim2.new(1,-4,0,91),i
    local tint = if i == selected then T.bg else T.cream
    local subTint = if i == selected then T.goldDark else T.muted
-   ClinicUI.label(row,point.cn.."  "..point.name,10,2,226,19,13,tint,ClinicUI.bold)
-   ClinicUI.label(row,point.location.."  /  "..string.upper(Rig.pointView(point)),10,20,238,19,11,subTint)
-   local tag = ClinicUI.label(row,point.clue,0,0,137,43,11,tint)
-   tag.Position,tag.AnchorPoint = UDim2.new(1,-9,0,0),Vector2.new(1,0)
-   tag.TextXAlignment = Enum.TextXAlignment.Right
+   local name = ClinicUI.label(row,point.cn.."  "..point.name,10,3,0,29,13,tint,ClinicUI.bold)
+   local location = ClinicUI.label(row,point.location.."  /  "..string.upper(Rig.pointView(point)),10,32,0,26,11,subTint)
+   local clue = ClinicUI.label(row,point.clue,10,59,0,26,11,tint)
+   name.Size,location.Size,clue.Size = UDim2.new(1,-20,0,29),UDim2.new(1,-20,0,26),UDim2.new(1,-20,0,26)
    row.Activated:Connect(function()
     selected = i
     goPoint(id)
@@ -130,19 +128,19 @@ local function updateList(ids: {string}?, showRoster: boolean, canCheer: boolean
   end
  elseif showRoster then
   for i, row in ipairs(state.rows) do
-   local item = ClinicUI.panel(ui.list,0,0,0,34,T.button,6)
-   item.Size,item.LayoutOrder = UDim2.new(1,-7,0,34),i
-   ClinicUI.label(item,row.name..(if row.id == player.UserId then "  (you)" else ""),9,0,186,34,13,T.cream)
+   local item = ClinicUI.panel(ui.list,0,0,0,55,T.button,6)
+   item.Size,item.LayoutOrder = UDim2.new(1,-4,0,55),i
+   ClinicUI.label(item,row.name..(if row.id == player.UserId then "  (you)" else ""),9,0,186,55,13,T.cream)
    local mark = if state.phase == "Lobby" or state.phase == "Intermission" then (if row.ready then "QUEUED" else "OUT")
     elseif not row.alive then "OUT"
     else string.format("%d QI",row.qi)
    if state.phase == "Recap" and row.delta ~= 0 then mark ..= string.format("  %+.0f",row.delta) end
    if row.cheers > 0 and not canCheer then mark ..= string.format("  ♥%d",row.cheers) end
-   local text = ClinicUI.label(item,mark,0,0,128,34,12,if row.delta < 0 then T.red elseif row.alive then T.mint else T.faint,ClinicUI.mono)
-   text.TextXAlignment,text.AnchorPoint,text.Position = Enum.TextXAlignment.Right,Vector2.new(1,0),UDim2.new(1,if canCheer and row.alive then -75 else -9,0,0)
+   local text = ClinicUI.label(item,mark,0,0,157,55,12,if row.delta < 0 then T.red elseif row.alive then T.mint else T.faint,ClinicUI.mono)
+   text.TextXAlignment,text.AnchorPoint,text.Position = Enum.TextXAlignment.Right,Vector2.new(1,0),UDim2.new(1,if canCheer and row.alive then -92 else -9,0,0)
    if canCheer and row.alive then
-    local cheerButton = ClinicUI.button(item,string.format("♥ %d",row.cheers),0,4,61,26)
-    cheerButton.AnchorPoint,cheerButton.Position,cheerButton.TextSize = Vector2.new(1,0),UDim2.new(1,-5,0,4),12
+    local cheerButton = ClinicUI.button(item,string.format("♥ %d",row.cheers),0,5,82,45)
+    cheerButton.AnchorPoint,cheerButton.Position,cheerButton.TextSize = Vector2.new(1,0),UDim2.new(1,-5,0,5),12*ClinicUI.textScale
     cheerButton.Activated:Connect(function() cheerRemote:FireServer(row.id) end)
    end
   end
@@ -163,11 +161,12 @@ local function renderText()
  local ids: {string}? = nil
  local showRoster = false
  local main, alt = "", ""
- ui.phase.Text = if s.practice then "SOLO PRACTICE" elseif phase == "Action" and s.overtime then "SUDDEN DEATH" else (phaseLabels[phase] or "")
- ui.detail.Text = if s.practice then string.format("LESSON  %02d / %02d",lessonIndex,#lesson)
-  elseif phase == "Lobby" then "2–12 PLAYERS"
-  elseif s.round > 0 then string.format("ROUND  %02d",s.round)
-  else "MATCH QUEUE"
+ ui.phase.Text = if s.practice then "PRACTICE" elseif phase == "Action" and s.overtime then "OVERTIME" else (phaseLabels[phase] or "")
+ ui.detail.Text = if s.practice then string.format("%s%d/%d",if compact then "" else "LESSON ",lessonIndex,#lesson)
+  elseif phase == "Lobby" then (if compact then "2–12" else "2–12 PLAYERS")
+  elseif phase == "Memory" and s.study and s.deadline == 0 then string.format("%s%d/%d",if compact then "" else "READY ",s.study.ready,s.study.required)
+  elseif s.round > 0 then string.format("ROUND %d",s.round)
+  else (if compact then "" else "MATCH QUEUE")
  ui.sceneTitle.Text = if phase == "Action" and s.region then "PRECISION VIEW"
   elseif phase == "Memory" or phase == "Recap" then "MERIDIAN ATLAS" else "PATIENT VIEW"
  if phase == "Lobby" or phase == "Intermission" then
@@ -176,14 +175,22 @@ local function renderText()
    else "The match is about to start. Study the marked points first, then diagnose by clue."
   main, alt = "Solo practice", if inQueue() then "Leave queue" else "Join queue"
  elseif phase == "Memory" then
-  heading, caption = if s.practice then "Study the marker" else "Memorize the points", "MERIDIAN STUDY"
-  description = if s.practice then "Match the highlighted point to its clue. Rotate the mannequin to see the location."
-   else "Pick a card to show its side of the mannequin. You’ll use these clues during the round."
+  heading, caption = "Study the points", "MERIDIAN STUDY"
   ids = s.pool
-  if s.practice then main, alt = "Start placement", "Exit lesson" end
+  if s.practice then
+   main, alt, description = "Start lesson", "Exit lesson", "Match the red marker to its clue."
+  elseif s.deadline > 0 then
+   description = "The countdown has started. Keep studying the points."
+  elseif s.active and s.study then
+   main = if s.study.voted then "" else "Ready"
+   description = if s.study.voted then "You’re ready. Waiting for other players."
+    else "Tap Ready when done. Half the players start a 10-second countdown."
+  else
+   description = "The players are studying. The countdown starts when half are ready."
+  end
  elseif phase == "Action" then
   local count = #s.clues
-  caption = if count > 1 then string.format("CASE NOTES   /   POINT %d OF %d", s.step, count) else "PATIENT REPORT"
+  caption = if count > 1 then string.format("POINT %d OF %d", s.step, count) else "PATIENT REPORT"
   if not s.active then
    heading, description = "Spectating", "Follow the live case and cheer for a practitioner. The next match starts after the ceremony."
    showRoster = true
@@ -215,14 +222,14 @@ local function renderText()
  ui.overline.Text,ui.heading.Text,ui.description.Text = caption,heading,description
  ui.action.Text,ui.aux.Text = main,alt
  ui.action.Visible,ui.aux.Visible = main ~= "",alt ~= ""
- local buttonState = ui.action.Visible or ui.aux.Visible
- if buttonState ~= hasButtons then
-  hasButtons = buttonState
-  if resize then compact = ClinicUI.layout(ui,resize,hasButtons) end
- end
+ ui.controls.Visible = ui.action.Visible or ui.aux.Visible
+ local split = ui.action.Visible and ui.aux.Visible
+ ui.action.Size = UDim2.new(if split then .5 else 1,if split then -4 else 0,1,0)
+ ui.aux.Size = ui.action.Size
+ ui.aux.Position = UDim2.new(if split then .5 else 0,if split then 4 else 0,0,0)
  local canPlace = active()
  ui.place.Visible,ui.back.Visible = canPlace,canPlace and s.region ~= nil
- ui.place.Text = if s.region then "Place needle" else "Select region"
+ ui.place.Text = if s.region then (if compact then "Place" else "Place needle") else (if compact then "Select" else "Select region")
  ui.listHeading.Text = if showRoster then "CLINIC ROSTER" else (if ids then "ACUPOINT CARDS" else "")
  ui.separator.Visible = showRoster or ids ~= nil
  ui.listHeading.Visible,ui.list.Visible = ui.separator.Visible,ui.separator.Visible
@@ -241,7 +248,7 @@ local function apply(next: Snapshot)
   local ids = if next.phase == "Memory" then next.pool elseif next.phase == "Recap" then next.reveal else {}
   PatientView.setMarkers(view,ids)
   if ids[1] then goPoint(ids[1]) end
-  ui.list.CanvasPosition = Vector2.zero
+  ui.side.CanvasPosition = Vector2.zero
  elseif old.region ~= next.region then
   turn("Front",true)
   pendingUntil = 0
@@ -370,7 +377,7 @@ ui.previous.Activated:Connect(function() orbit(-1) end)
 ui.nextView.Activated:Connect(function() orbit(1) end)
 ui.place.Activated:Connect(function() send() end)
 ui.back.Activated:Connect(function() send(true) end)
-ui.action.Activated:Connect(function()
+local function primaryAction()
  if practice then
   if state.phase == "Memory" then localState("Action")
   elseif state.phase == "Victory" then beginPractice()
@@ -381,11 +388,14 @@ ui.action.Activated:Connect(function()
    else localState("Victory") end
   end
  elseif state.phase == "Lobby" or state.phase == "Intermission" then beginPractice()
+ elseif state.phase == "Memory" and state.active and state.deadline == 0 and state.study and not state.study.voted then
+  studyRemote:FireServer(state.roundId)
  elseif state.phase == "Recap" then
   recapRoster = true
   renderText()
  end
-end)
+end
+ui.action.Activated:Connect(primaryAction)
 ui.aux.Activated:Connect(function()
  if practice then endPractice()
  elseif state.phase == "Lobby" or state.phase == "Intermission" then queueRemote:FireServer(not inQueue())
@@ -431,12 +441,8 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
   elseif key == Enum.KeyCode.ButtonB or key == Enum.KeyCode.Backspace then send(true)
   elseif key == Enum.KeyCode.ButtonA or key == Enum.KeyCode.Space then
    if active() then send()
-   elseif ui.action.Visible and key == Enum.KeyCode.ButtonA then
-    if state.phase == "Lobby" then beginPractice()
-    elseif practice and state.phase == "Memory" then localState("Action")
-    elseif practice and state.phase == "Recap" then
-     if lessonIndex < #lesson then lessonIndex += 1; localState("Memory") else localState("Victory") end
-    elseif practice and state.phase == "Victory" then beginPractice() end
+   elseif ui.action.Visible and (key == Enum.KeyCode.ButtonA or state.phase == "Memory") then
+    primaryAction()
    end
   end
  end
@@ -493,7 +499,7 @@ local function project(p: Vector3): Vector2?
  return size/2 + Vector2.new(relative.X,-relative.Y)*pixels/-relative.Z
 end
 
-local markerTag = ClinicUI.label(ui.markerLayer,"",0,0,124,22,12,T.gold,ClinicUI.bold)
+local markerTag = ClinicUI.label(ui.markerLayer,"",0,0,190,33,12,T.point,ClinicUI.bold)
 markerTag.BackgroundColor3,markerTag.BackgroundTransparency = T.bg,.10
 markerTag.TextXAlignment = Enum.TextXAlignment.Center
 local markerRound = Instance.new("UICorner")
@@ -504,12 +510,13 @@ RunService.RenderStepped:Connect(function(dt)
  if size.X < 32 or size.Y < 32 then return end
  if resize ~= size then
   resize = size
-  compact = ClinicUI.layout(ui,size,hasButtons)
+  compact = ClinicUI.layout(ui,size)
+  renderText()
  end
  local t = clock()
  local s = state
  local remaining = math.max(0,s.deadline-t)
- local duration = if s.phase == "Action" then (if s.overtime then Protocol.overtime else Protocol.action)
+ local duration = if s.phase == "Action" then (if s.overtime then Protocol.overtime elseif s.round == 1 then Protocol.firstAction else Protocol.action)
   elseif s.phase == "Memory" then Protocol.memory elseif s.phase == "Intermission" then Protocol.intermission
   elseif s.phase == "Recap" then Protocol.recap else Protocol.victory
  local urgent = s.phase == "Action" and s.deadline > 0 and remaining <= 3
@@ -552,7 +559,8 @@ RunService.RenderStepped:Connect(function(dt)
  markerTag.Visible = mark ~= nil
  if mark and point then
   markerTag.Text = point.name
-  markerTag.Position = UDim2.fromOffset(mark.X/ui.scale.Scale+12,mark.Y/ui.scale.Scale-11)
+  local maxX = (ui.viewport.AbsoluteSize.X/ui.scale.Scale)-markerTag.Size.X.Offset-8
+  markerTag.Position = UDim2.fromOffset(math.clamp(mark.X/ui.scale.Scale+12,0,math.max(0,maxX)),mark.Y/ui.scale.Scale-16)
  end
 
  ui.reticle.Visible = canAim and cursor ~= nil
@@ -567,9 +575,9 @@ RunService.RenderStepped:Connect(function(dt)
  if locked then feedback ..= string.format("  %.1fs",s.lockUntil-t)
  elseif pose.guard and canAim and not s.region then feedback = string.upper(regionLabels[pose.guard]).." GUARDED"
  elseif s.phase == "Action" and feedback == "" and canAim then
-  feedback = if UserInputService.TouchEnabled then "Drag to aim above your finger" elseif aimPart and not s.region then regionLabels[aimPart.region] else "Aim at the mannequin"
+  feedback = if UserInputService.TouchEnabled then "Drag to aim" elseif aimPart and not s.region then regionLabels[aimPart.region] else "Aim at the patient"
  end
- if t < noAimUntil and not locked then feedback = "Move the reticle onto the patient." end
+ if t < noAimUntil and not locked then feedback = "Aim at the patient" end
  if s.phase == "Recap" and s.status == "Timeout" then feedback = "TIME EXPIRED" end
  ui.feedback.Text,ui.feedback.TextColor3 = feedback,if locked or s.status == "Missed" or s.status == "Timeout" then T.red elseif s.status == "Placed" then T.mint else T.cream
  local fx = t-resultAt
