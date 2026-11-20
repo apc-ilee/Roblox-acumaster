@@ -176,26 +176,33 @@ local function build(parent: PlayerGui)
  local footer = label(root,"Fictional clinic simulation",0,0,0,28,11,Theme.faint)
  center(footer)
 
- local shade = button(root,"",0,0,0,0)
- shade.ZIndex, shade.Visible, shade.AutoButtonColor = 15,false,false
- shade.BackgroundColor3, shade.BackgroundTransparency = Theme.bg,.15
+ local shade = panel(root,0,0,0,0,Theme.bg)
+ shade.ZIndex, shade.Visible, shade.Active = 15,false,true
+ shade.BackgroundTransparency = .15
  local modal = panel(shade,0,0,0,0,Theme.panel,12)
  modal.AnchorPoint, modal.Position = Vector2.new(.5,.5),UDim2.fromScale(.5,.5)
- modal.ZIndex, modal.Active = 16,true
+ modal.ZIndex, modal.Active, modal.SelectionGroup = 16,true,true
+ local stop = Enum.SelectionBehavior.Stop
+ modal.SelectionBehaviorUp, modal.SelectionBehaviorDown = stop, stop
+ modal.SelectionBehaviorLeft, modal.SelectionBehaviorRight = stop, stop
  border(modal,Theme.edge)
- local modalHead = label(modal,"How to play",20,16,294,64,27,Theme.cream,bold)
- modalHead.ZIndex = 17
+ local helpStep = label(modal,"",20,12,0,31,11,Theme.mint,mono)
+ local modalHead = label(modal,"",20,48,0,70,27,Theme.cream,bold)
  local helpScroll = Instance.new("ScrollingFrame")
  helpScroll.BackgroundTransparency,helpScroll.BorderSizePixel,helpScroll.ScrollBarThickness = 1,0,5
  helpScroll.CanvasSize,helpScroll.AutomaticCanvasSize = UDim2.fromOffset(0,0),Enum.AutomaticSize.Y
  helpScroll.ScrollingDirection,helpScroll.ZIndex,helpScroll.Parent = Enum.ScrollingDirection.Y,17,modal
- local instructions = label(helpScroll,
-  "1  STUDY\nReview the red markers. Switch figures with the Figure button or Y on a gamepad. Tap Ready when you’re done. Half the players start the 10-second countdown.\n\n2  DIAGNOSE\nRead the clue and select a body region.\n\n3  PLACE\nRotate to the right view and aim at the point. A miss costs one Qi. The fastest valid run gains two.\n\nQ/E or LB/RB rotates. On a gamepad, aim with the left stick, confirm with A, and go back with B.",
-  0,0,0,0,15,Theme.cream)
+ local instructions = label(helpScroll,"",0,0,0,0,15,Theme.cream)
  wrap(instructions)
  instructions.Size, instructions.AutomaticSize = UDim2.new(1,-12,0,0),Enum.AutomaticSize.Y
- local close = button(modal,"Back to clinic",20,0,0,58,true)
- close.ZIndex = 17
+ local helpClose = button(modal,"Skip",20,0,0,58)
+ local helpBack = button(modal,"Back",20,0,0,58)
+ local helpNext = button(modal,"Next",20,0,0,58,true)
+ helpStep.ZIndex,modalHead.ZIndex,instructions.ZIndex = 17,17,17
+ helpClose.ZIndex,helpBack.ZIndex,helpNext.ZIndex = 17,17,17
+ helpClose.NextSelectionRight = helpBack
+ helpBack.NextSelectionLeft,helpBack.NextSelectionRight = helpClose,helpNext
+ helpNext.NextSelectionLeft = helpBack
 
  return {
   gui=gui,root=root,scale=scale,header=header,seal=seal,title=title,subtitle=subtitle,help=help,motion=motion,
@@ -204,7 +211,8 @@ local function build(parent: PlayerGui)
   reticleStroke=reticleStroke,dot=dot,halo=halo,hitStroke=hitStroke,flashStroke=flashStroke,cameraControls=cameraControls,
   previous=previous,nextView=nextView,direction=direction,figure=figure,back=back,place=place,feedback=feedback,
   side=side,overline=overline,heading=heading,description=description,action=action,aux=aux,controls=controls,
-  separator=separator,listHeading=listHeading,list=list,footer=footer,shade=shade,close=close,modal=modal,modalHead=modalHead,helpScroll=helpScroll,
+  separator=separator,listHeading=listHeading,list=list,footer=footer,shade=shade,modal=modal,modalHead=modalHead,helpStep=helpStep,helpScroll=helpScroll,
+  instructions=instructions,helpClose=helpClose,helpBack=helpBack,helpNext=helpNext,
  }
 end
 
@@ -258,9 +266,13 @@ local function layout(ui: UI, size: Vector2): boolean
  position(ui.shade,0,0,w,h)
  local mw, mh = if compact then w-14 else 650, if compact then 675 else 632
  ui.modal.Size = UDim2.fromOffset(mw,mh)
- position(ui.modalHead,20,12,mw-40,70)
- position(ui.helpScroll,20,89,mw-40,mh-170)
- position(ui.close,20,mh-70,mw-40,56)
+ position(ui.helpStep,20,14,mw-40,32)
+ position(ui.modalHead,20,51,mw-40,68)
+ position(ui.helpScroll,20,132,mw-40,mh-218)
+ local buttonWidth = math.floor((mw-60)/3)
+ position(ui.helpClose,20,mh-70,buttonWidth,56)
+ position(ui.helpBack,30+buttonWidth,mh-70,buttonWidth,56)
+ position(ui.helpNext,40+buttonWidth*2,mh-70,buttonWidth,56)
  return compact
 end
 

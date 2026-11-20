@@ -5,8 +5,8 @@ A Roblox memory and precision party game for 2–12 players. Study the meridian 
 ## Play in Roblox Studio
 
 1. Open **Acu-Master.rbxl** in Roblox Studio and choose **Play**.
-2. Select **Solo practice** for four untimed lessons covering front, back, sole, and crown placements.
-3. For a multiplayer check, select **Server & Clients** in Studio’s **Test** tab, set the client count to two, then start the test. Both clients enter the queue by default.
+2. Complete or skip the opening walkthrough, then select **Solo practice** for four untimed lessons covering front, back, sole, and crown placements.
+3. For a multiplayer check, select **Server & Clients** in Studio’s **Test** tab, set the client count to two, then start the test. Complete or skip the walkthrough in both clients to enter the match queue.
 
 For a published experience, set the Roblox place’s maximum player count to 12 in Creator Dashboard. The in-game queue caps each match at 12 and lets additional players watch.
 

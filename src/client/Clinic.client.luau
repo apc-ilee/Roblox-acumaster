@@ -148,11 +148,11 @@ local function updateList(ids: {string}?, showRoster: boolean, canCheer: boolean
  end
 end
 
-local function inQueue(): boolean
- for _, row in ipairs(server.rows) do
-  if row.id == player.UserId then return row.ready end
- end
- return true
+local queuedForMatch = false
+local function setQueue(ready: boolean)
+ if queuedForMatch == ready then return end
+ queuedForMatch = ready
+ queueRemote:FireServer(ready)
 end
 
 local function renderText()
@@ -177,7 +177,7 @@ local function renderText()
   heading, caption, showRoster = "The clinic is open", "MATCH QUEUE", true
   description = if phase == "Lobby" then "A match starts when two players queue. Start a solo lesson while you wait."
    else "The match is about to start. Study the marked points first, then diagnose by clue."
-  main, alt = "Solo practice", if inQueue() then "Leave queue" else "Join queue"
+  main, alt = "Solo practice", if queuedForMatch then "Leave queue" else "Join queue"
  elseif phase == "Memory" then
   heading, caption = "Study the points", "MERIDIAN STUDY"
   ids = s.pool
@@ -188,7 +188,7 @@ local function renderText()
   elseif s.active and s.study then
    main = if s.study.voted then "" else "Ready"
    description = if s.study.voted then "You’re ready. Waiting for other players."
-    else "Tap Ready when done. Half the players start a 10-second countdown."
+    else "Select Ready when done. Half the players start a 10-second countdown."
   else
    description = "The players are studying. The countdown starts when half are ready."
   end
@@ -275,6 +275,7 @@ end
 local function accept(s: Snapshot)
  if s.revision < server.revision then return end
  server = s
+ if s.active then queuedForMatch = true end
  if not practice or s.active then
   practice = nil
   apply(s)
@@ -304,8 +305,8 @@ end
 local resumeQueue = false
 local function beginPractice()
  if not practice then
-  resumeQueue = inQueue()
-  if resumeQueue then queueRemote:FireServer(false) end
+  resumeQueue = queuedForMatch
+  setQueue(false)
  end
  lessonIndex = 1
  localState("Memory")
@@ -313,12 +314,8 @@ end
 
 local function endPractice()
  practice = nil
+ setQueue(resumeQueue)
  apply(server)
- if resumeQueue then
-  task.delay(.4,function()
-   if not practice and resumeQueue then queueRemote:FireServer(true) end
-  end)
- end
 end
 
 local function currentHit(): (Rig.Segment?, Vector3?)
@@ -366,13 +363,77 @@ local function send(isBack: boolean?)
  else macroRemote:FireServer(intent) end
 end
 
-ui.help.Activated:Connect(function()
+local helpPages = {
+ {
+  title = "How to play",
+  body = [[Study the red acupoints before the round. Select a card to turn the figure to the right view.
+
+Select Ready when you’re done. When half the players are ready, everyone gets a final 10 seconds to study.]],
+ },
+ {
+  title = "How to aim",
+  body = [[Read the patient’s clue. Select the matching body region, then rotate to the right view and aim at the exact point.
+
+The fastest valid placement gains 2 Qi. A miss or timeout costs 1 Qi.]],
+ },
+ {
+  title = "Controls",
+  body = [[Mouse and keyboard
+Aim and click to confirm. Q/E rotates and Backspace goes back.
+
+Touch
+Drag to aim. Release to select a region, then use Place to confirm the exact point. Tap the arrows to rotate.
+
+Gamepad
+Left stick aims. A confirms, LB/RB rotates, and B goes back.]],
+ },
+}
+local introPending = true
+local helpPage = 1
+local function showHelpPage()
+ local page = helpPages[helpPage]
+ ui.helpStep.Text = string.format("QUICK START  %d/%d",helpPage,#helpPages)
+ ui.modalHead.Text,ui.instructions.Text = page.title,page.body
+ ui.helpScroll.CanvasPosition = Vector2.zero
+ ui.helpClose.Text = if introPending then "Skip" else "Close"
+ ui.helpBack.Visible = helpPage > 1
+ ui.helpNext.Text = if helpPage < #helpPages then "Next" elseif introPending then "Play" else "Done"
+ ui.helpClose.NextSelectionRight = if helpPage > 1 then ui.helpBack else ui.helpNext
+ ui.helpNext.NextSelectionLeft = if helpPage > 1 then ui.helpBack else ui.helpClose
+end
+local function openHelp()
+ helpPage = 1
+ showHelpPage()
  ui.shade.Visible = true
- if UserInputService.GamepadEnabled then GuiService.SelectedObject = ui.close end
-end)
-ui.close.Activated:Connect(function()
+ if UserInputService.GamepadEnabled then GuiService.SelectedObject = ui.helpNext end
+end
+local function closeHelp()
+ if not ui.shade.Visible then return end
  ui.shade.Visible = false
  GuiService.SelectedObject = nil
+ if introPending then
+  introPending = false
+  setQueue(true)
+  renderText()
+ end
+end
+local function nextHelpPage()
+ if helpPage == #helpPages then
+  closeHelp()
+ else
+  helpPage += 1
+  showHelpPage()
+ end
+end
+ui.help.Activated:Connect(openHelp)
+ui.helpClose.Activated:Connect(closeHelp)
+ui.helpNext.Activated:Connect(nextHelpPage)
+ui.helpBack.Activated:Connect(function()
+ if helpPage > 1 then
+  helpPage -= 1
+  showHelpPage()
+  if GuiService.SelectedObject == ui.helpBack and not ui.helpBack.Visible then GuiService.SelectedObject = ui.helpNext end
+ end
 end)
 ui.motion.Activated:Connect(function()
  reduceMotion = not reduceMotion
@@ -391,6 +452,7 @@ ui.nextView.Activated:Connect(function() orbit(1) end)
 ui.place.Activated:Connect(function() send() end)
 ui.back.Activated:Connect(function() send(true) end)
 local function primaryAction()
+ if ui.shade.Visible then return end
  if practice then
   if state.phase == "Memory" then localState("Action")
   elseif state.phase == "Victory" then beginPractice()
@@ -410,8 +472,11 @@ local function primaryAction()
 end
 ui.action.Activated:Connect(primaryAction)
 ui.aux.Activated:Connect(function()
+ if ui.shade.Visible then return end
  if practice then endPractice()
- elseif state.phase == "Lobby" or state.phase == "Intermission" then queueRemote:FireServer(not inQueue())
+ elseif state.phase == "Lobby" or state.phase == "Intermission" then
+  setQueue(not queuedForMatch)
+  renderText()
  elseif state.phase == "Recap" then
   recapRoster = false
   renderText()
@@ -436,8 +501,12 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
  local kind,p = input.UserInputType,point2(input.Position)
  if ui.shade.Visible then
   if input.KeyCode == Enum.KeyCode.ButtonB or input.KeyCode == Enum.KeyCode.Escape then
-   ui.shade.Visible = false
-   GuiService.SelectedObject = nil
+   closeHelp()
+  elseif not processed and input.KeyCode == Enum.KeyCode.Return then
+   nextHelpPage()
+  elseif not processed and input.KeyCode == Enum.KeyCode.ButtonA and not GuiService.SelectedObject then
+   nextHelpPage()
+   if ui.shade.Visible then GuiService.SelectedObject = ui.helpNext end
   end
   return
  end
@@ -496,6 +565,7 @@ end)
 local neutral = Rig.pose(false,0,0)
 view.camera.CFrame = PatientView.desired(ui.viewport,nil,"Front")
 renderText()
+openHelp()
 receiver.OnClientEvent:Connect(accept)
 task.spawn(function()
  for _ = 1, 3 do

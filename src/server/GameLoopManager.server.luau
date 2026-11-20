@@ -35,8 +35,8 @@ get.Name, get.Parent = "GetSnapshot", network
 
 local random = Random.new()
 local entries: {[number]: Entry} = {}
-local optedOut: {[Player]: boolean} = {}
-local controlsAt: {[Player]: number} = {}
+local queuedPlayers: {[Player]: boolean} = {}
+local queueRefreshPending = false
 local cheerAt: {[Player]: number} = {}
 local roster: {number} = {}
 local pool: {string} = {}
@@ -75,7 +75,7 @@ end
 local function queued(): {Player}
  local list: {Player} = {}
  for _, player in ipairs(Players:GetPlayers()) do
-  if not optedOut[player] then table.insert(list, player) end
+  if queuedPlayers[player] then table.insert(list, player) end
  end
  table.sort(list, function(a, b) return a.UserId < b.UserId end)
  return list
@@ -96,7 +96,7 @@ local function snapshot(player: Player): Protocol.Snapshot
   local list = Players:GetPlayers()
   table.sort(list, function(a,b) return a.UserId < b.UserId end)
   for _, p in ipairs(list) do
-   local ready = not optedOut[p]
+   local ready = queuedPlayers[p] == true
    table.insert(rows, {id = p.UserId, name = p.DisplayName, qi = 3, alive = ready, delta = 0, ready = ready, cheers = 0})
   end
  end
@@ -247,18 +247,15 @@ back.OnServerEvent:Connect(function(player: Player, payload: any)
  publish(player)
 end)
 
-local function controlAllowed(player: Player): boolean
- local t = now()
- if t - (controlsAt[player] or 0) < 0.35 then return false end
- controlsAt[player] = t
- return true
-end
-
 queue.OnServerEvent:Connect(function(player: Player, ready: any)
- if type(ready) ~= "boolean" or not controlAllowed(player) then return end
- if entries[player.UserId] then return end
- optedOut[player] = not ready
- publish(nil)
+ if type(ready) ~= "boolean" or entries[player.UserId] or (queuedPlayers[player] == true) == ready then return end
+ queuedPlayers[player] = ready
+ if queueRefreshPending then return end
+ queueRefreshPending = true
+ task.delay(0.2, function()
+  queueRefreshPending = false
+  publish(nil)
+ end)
 end)
 
 studyReady.OnServerEvent:Connect(function(player: Player, studyId: any)
@@ -289,7 +286,7 @@ Players.PlayerAdded:Connect(function()
  publish(nil)
 end)
 Players.PlayerRemoving:Connect(function(player)
- optedOut[player], controlsAt[player], cheerAt[player] = nil, nil, nil
+ queuedPlayers[player], cheerAt[player] = nil, nil
  local entry = entries[player.UserId]
  if entry then
   entry.alive, entry.status, entry.message = false, "Watching", "Left the clinic."
