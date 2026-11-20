@@ -18,7 +18,7 @@ For a published experience, set the Roblox place’s maximum player count to 12 
 | Touch | Drag on the patient. Release to select a region. Tap **Place needle** to confirm the point. The reticle sits above your finger. | View buttons or drag during study | Back |
 | Gamepad | Left stick to aim, A to confirm | LB / RB | B |
 
-The **Motion** setting reduces camera motion, dynamic sway, warning flashes, and the countdown sound. In study and recap, selecting an acupoint card turns the mannequin to its view.
+The **Motion** setting reduces camera motion, dynamic sway, warning flashes, and the countdown sound. In study and recap, selecting an acupoint card turns the mannequin to its view. The study screen defaults to a detailed human figure. Use **Show blocks** or gamepad **Y** to switch models. The choice applies to solo lesson prep and multiplayer study. The placement stage uses the block patient.
 
 ## Match rules
 

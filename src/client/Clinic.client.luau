@@ -56,6 +56,7 @@ local selected = 1
 local side = "Front"
 local views = {"Front","Back","Top","Sole"}
 local reduceMotion, compact = false, false
+local useHumanFigure = true
 local cursor: Vector2? = nil
 local touch: InputObject? = nil
 local touchStart: Vector2? = nil
@@ -167,8 +168,11 @@ local function renderText()
   elseif phase == "Memory" and s.study and s.deadline == 0 then string.format("%s%d/%d",if compact then "" else "READY ",s.study.ready,s.study.required)
   elseif s.round > 0 then string.format("ROUND %d",s.round)
   else (if compact then "" else "MATCH QUEUE")
- ui.sceneTitle.Text = if phase == "Action" and s.region then "PRECISION VIEW"
-  elseif phase == "Memory" or phase == "Recap" then "MERIDIAN ATLAS" else "PATIENT VIEW"
+ ui.sceneTitle.Text = if phase == "Memory" then (if useHumanFigure then "HUMAN FIGURE" else "BLOCK FIGURE")
+  elseif phase == "Action" and s.region then "PRECISION VIEW"
+  elseif phase == "Recap" then "MERIDIAN ATLAS" else "PATIENT VIEW"
+ ui.figure.Visible = phase == "Memory"
+ ui.figure.Text = if useHumanFigure then "Show blocks" else "Show human"
  if phase == "Lobby" or phase == "Intermission" then
   heading, caption, showRoster = "The clinic is open", "MATCH QUEUE", true
   description = if phase == "Lobby" then "A match starts when two players queue. Start a solo lesson while you wait."
@@ -246,6 +250,7 @@ local function apply(next: Snapshot)
   warningBeat = -1
   turn("Front",true)
   local ids = if next.phase == "Memory" then next.pool elseif next.phase == "Recap" then next.reveal else {}
+  PatientView.setStudyFigure(view,next.phase == "Memory" and useHumanFigure)
   PatientView.setMarkers(view,ids)
   if ids[1] then goPoint(ids[1]) end
   ui.side.CanvasPosition = Vector2.zero
@@ -373,6 +378,14 @@ ui.motion.Activated:Connect(function()
  reduceMotion = not reduceMotion
  ui.motion.Text = if reduceMotion then "Motion: Low" else "Motion: Full"
 end)
+local function switchStudyFigure()
+ if state.phase ~= "Memory" then return end
+ useHumanFigure = not useHumanFigure
+ PatientView.setStudyFigure(view,useHumanFigure)
+ PatientView.setMarkers(view,state.pool)
+ renderText()
+end
+ui.figure.Activated:Connect(switchStudyFigure)
 ui.previous.Activated:Connect(function() orbit(-1) end)
 ui.nextView.Activated:Connect(function() orbit(1) end)
 ui.place.Activated:Connect(function() send() end)
@@ -438,6 +451,7 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
   local key = input.KeyCode
   if key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1 then orbit(-1)
   elseif key == Enum.KeyCode.E or key == Enum.KeyCode.ButtonR1 then orbit(1)
+  elseif key == Enum.KeyCode.ButtonY then switchStudyFigure()
   elseif key == Enum.KeyCode.ButtonB or key == Enum.KeyCode.Backspace then send(true)
   elseif key == Enum.KeyCode.ButtonA or key == Enum.KeyCode.Space then
    if active() then send()
@@ -555,7 +569,8 @@ RunService.RenderStepped:Connect(function(dt)
  local locked = t < s.lockUntil
  local point = if s.phase == "Memory" then Data.byId[s.pool[selected] or ""]
   elseif s.phase == "Recap" then Data.byId[s.reveal[selected] or ""] else nil
- local mark = if point and Rig.pointView(point)==side then project(Rig.pointPosition(point)+Rig.normals[side]*.18) else nil
+ local markerAt = if point then view.markerPositions[point.id] else nil
+ local mark = if point and markerAt and Rig.pointView(point)==side then project(markerAt) else nil
  markerTag.Visible = mark ~= nil
  if mark and point then
   markerTag.Text = point.name

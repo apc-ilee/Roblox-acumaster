@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rig = require(Shared.Rig)
 local Data = require(Shared.AcupointData)
+local StudyFigure = require(script.Parent.StudyFigure)
 
 local function color(hex: string): Color3
  return Color3.fromHex(hex)
@@ -22,6 +23,7 @@ end
 type Decoration = {part: Part, base: CFrame, region: string}
 export type View = {
  frame: ViewportFrame, camera: Camera, model: WorldModel, pieces: {Decoration},
+ blocks: Model, human: StudyFigure.Figure?, markerPositions: {[string]: Vector3},
  rig: {[string]: Part}, marks: {Part}, guard: {Part}, root: CFrame, stage: {Part},
 }
 
@@ -34,10 +36,12 @@ local function build(frame: ViewportFrame): View
  camera.Parent, frame.CurrentCamera = frame, camera
  frame.LightColor, frame.Ambient = color("FFE1B5"), color("8DA9A6")
  frame.LightDirection = v(-0.5,-1,-0.8)
+ local blocks = Instance.new("Model")
+ blocks.Name, blocks.Parent = "Block patient", model
  local pieces: {Decoration} = {}
  local anatomy: {[string]: Part} = {}
  local function detail(name: string, size: Vector3, at: Vector3, tint: Color3, region: string, tilt: number?): Part
-  local part = block(model, name, size, at, tint)
+  local part = block(blocks, name, size, at, tint)
   if tilt then part.CFrame *= CFrame.Angles(0, 0, tilt) end
   table.insert(pieces, {part = part, base = part.CFrame, region = region})
   return part
@@ -84,10 +88,22 @@ local function build(frame: ViewportFrame): View
   arm.Transparency = 1
   guard[i] = arm
  end
- return {frame=frame,camera=camera,model=model,pieces=pieces,rig=anatomy,marks={},guard=guard,root=CFrame.identity,stage=stage}
+ return {frame=frame,camera=camera,model=model,blocks=blocks,markerPositions={},pieces=pieces,rig=anatomy,marks={},guard=guard,root=CFrame.identity,stage=stage}
 end
 
-local function draw(view: View, p: Rig.Pose, visibleRegion: string?, hovered: string?, lit: boolean, side: string)
+local function setStudyFigure(view: View, detailed: boolean)
+ if detailed then
+  local human = view.human or StudyFigure.build()
+  view.human = human
+  view.blocks.Parent = nil
+  human.model.Parent = view.model
+ else
+  if view.human then view.human.model.Parent = nil end
+  view.blocks.Parent = view.model
+ end
+end
+
+local function drawBlocks(view: View, visibleRegion: string?, hovered: string?, lit: boolean, side: string)
  for _, item in ipairs(view.pieces) do
   item.part.CFrame = view.root * item.base
   local crown = item.part.Name == "Hair" or item.part.Name == "Topknot"
@@ -100,6 +116,10 @@ local function draw(view: View, p: Rig.Pose, visibleRegion: string?, hovered: st
   part.Color = if hovered == info.region then tint:Lerp(palette.gold,.45)
    elseif lit then tint:Lerp(palette.gold,.32) else tint
  end
+end
+
+local function draw(view: View, p: Rig.Pose, visibleRegion: string?, hovered: string?, lit: boolean, side: string)
+ if view.blocks.Parent then drawBlocks(view,visibleRegion,hovered,lit,side) end
  for _, platform in ipairs(view.stage) do
   platform.Transparency = if visibleRegion or side == "Sole" then 1 else 0
  end
@@ -117,10 +137,17 @@ end
 local function setMarkers(view: View, ids: {string})
  for _, part in ipairs(view.marks) do part:Destroy() end
  table.clear(view.marks)
+ table.clear(view.markerPositions)
  for _, id in ipairs(ids) do
   local p = Data.byId[id]
   local normal = Rig.normals[Rig.pointView(p)]
-  local at = Rig.pointPosition(p) + normal*.085
+  local surface = Rig.pointPosition(p)
+  local human = view.human
+  if human and human.model.Parent then
+   surface = StudyFigure.surfaceAt(human,surface,normal) or surface
+  end
+  local at = surface + normal*.085
+  view.markerPositions[id] = at
   local point = block(view.model,p.name,v(.24,.24,.24),at,palette.point)
   point.Shape, point.Material = Enum.PartType.Ball, Enum.Material.Neon
   table.insert(view.marks, point)
@@ -159,4 +186,4 @@ local function ray(view: View, screen: Vector2): (Vector3, Vector3)
  return view.root:PointToObjectSpace(c.CFrame.Position), view.root:VectorToObjectSpace(c.CFrame:VectorToWorldSpace(localDirection).Unit)
 end
 
-return table.freeze({build=build, draw=draw, setMarkers=setMarkers, desired=desired, ray=ray})
+return table.freeze({build=build, draw=draw, setMarkers=setMarkers, setStudyFigure=setStudyFigure, desired=desired, ray=ray})
