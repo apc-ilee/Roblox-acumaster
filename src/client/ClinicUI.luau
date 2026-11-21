@@ -125,7 +125,9 @@ local function build(parent: PlayerGui)
  local direction = label(cameraControls,"FRONT",0,0,70,40,12,Theme.cream,mono)
  center(direction)
  local figure = button(scene,"Show blocks",0,0,226,46)
- figure.Visible = false
+ local overview = button(scene,"Overview",0,0,126,46)
+ local nextPoint = button(scene,"First point",0,0,160,42,true)
+ figure.Visible,overview.Visible,nextPoint.Visible = false,false,false
  local back = button(scene,"Back",0,0,64,40)
  local place = button(scene,"Select region",0,0,132,40,true)
  local flash = panel(scene,2,2,0,0,Theme.red,11)
@@ -226,7 +228,7 @@ local function build(parent: PlayerGui)
   strip=strip,phase=phase,detail=detail,timer=timer,track=track,bar=bar,scene=scene,viewport=viewport,
   grid=grid,scan=scan,sceneTitle=sceneTitle,viewTitle=viewTitle,markerLayer=markerLayer,reticle=reticle,
   reticleStroke=reticleStroke,dot=dot,halo=halo,hitStroke=hitStroke,flashStroke=flashStroke,cameraControls=cameraControls,
-  previous=previous,nextView=nextView,direction=direction,figure=figure,back=back,place=place,feedback=feedback,
+  previous=previous,nextView=nextView,direction=direction,figure=figure,overview=overview,nextPoint=nextPoint,back=back,place=place,feedback=feedback,
   symptom=symptom,symptomEdge=symptomEdge,symptomLabel=symptomLabel,symptomText=symptomText,
   side=side,overline=overline,heading=heading,description=description,action=action,aux=aux,controls=controls,
   separator=separator,listHeading=listHeading,list=list,footer=footer,shade=shade,modal=modal,modalHead=modalHead,helpStep=helpStep,helpScroll=helpScroll,
@@ -289,7 +291,10 @@ local function layout(ui: UI, size: Vector2): boolean
  position(ui.direction,if compact then 36 else 56,0,if compact then 88 else 100,46)
  position(ui.nextView,if compact then 124 else 156,0,if compact then 36 else 56,46)
  position(ui.place,sw-(if compact then 139 else 211),sh-56,if compact then 127 else 199,46)
- position(ui.figure,sw-254,sh-56,242,46)
+ local figureWidth = if compact then 106 else 190
+ position(ui.figure,sw-12-figureWidth,sh-56,figureWidth,46)
+ position(ui.overview,sw-146-figureWidth,sh-56,126,46)
+ position(ui.nextPoint,sw-172,8,160,42)
  position(ui.back,sw-(if compact then 225 else 301),sh-56,78,46)
 
  position(ui.side,px,py,pw,ph)

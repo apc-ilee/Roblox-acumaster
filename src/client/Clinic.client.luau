@@ -97,6 +97,19 @@ local function goPoint(id: string)
  if point then turn(Rig.pointView(point),true) end
 end
 
+local function studyMarkerIds(): {string}
+ local focused = state.pool[selected]
+ return if focused then {focused} else state.pool
+end
+
+local function focusStudyPoint(index: number)
+ selected = index
+ PatientView.setMarkers(view,studyMarkerIds())
+ local focused = state.pool[selected]
+ if focused then goPoint(focused) else turn("Front",true) end
+ ui.nextPoint.Text = if selected == 0 or selected >= #state.pool then "First point" else "Next point"
+end
+
 local function updateList(ids: {string}?, showRoster: boolean, canCheer: boolean)
  local fragments: {string} = {state.phase,tostring(selected),tostring(state.practice),tostring(showRoster),tostring(canCheer)}
  if ids then
@@ -125,8 +138,12 @@ local function updateList(ids: {string}?, showRoster: boolean, canCheer: boolean
    local clue = ClinicUI.label(row,point.clue,10,59,0,26,11,tint)
    name.Size,location.Size,clue.Size = UDim2.new(1,-20,0,29),UDim2.new(1,-20,0,26),UDim2.new(1,-20,0,26)
    row.Activated:Connect(function()
-    selected = i
-    goPoint(id)
+    if state.phase == "Memory" then
+     focusStudyPoint(i)
+    else
+     selected = i
+     goPoint(id)
+    end
     updateList(ids,false,false)
    end)
   end
@@ -182,9 +199,11 @@ local function renderText()
  RankingsView.render(ranks,s)
  local patientVisible = not ranks.board.Visible
  ui.viewport.Visible,ui.cameraControls.Visible = patientVisible,patientVisible
- ui.sceneTitle.Visible,ui.viewTitle.Visible = patientVisible,patientVisible
- ui.figure.Visible = phase == "Memory"
- ui.figure.Text = if useHumanFigure then "Show blocks" else "Show human"
+ local studyPhase = phase == "Memory"
+ ui.sceneTitle.Visible,ui.viewTitle.Visible = patientVisible,patientVisible and not studyPhase
+ ui.figure.Visible,ui.overview.Visible,ui.nextPoint.Visible = studyPhase,studyPhase,studyPhase and #s.pool > 0
+ ui.figure.Text = if useHumanFigure then (if compact then "Blocks" else "Show blocks") else (if compact then "Human" else "Show human")
+ ui.nextPoint.Text = if selected == 0 or selected >= #s.pool then "First point" else "Next point"
  if phase == "Lobby" or phase == "Intermission" then
   heading, caption, showRoster = "The clinic is open", "MATCH QUEUE", true
   description = if phase == "Lobby" then "A match starts when two players queue. Start a solo lesson while you wait."
@@ -196,7 +215,7 @@ local function renderText()
   if s.practice then
    main, alt, description = "Start lesson", "Exit lesson", "Match the red marker to its clue."
   elseif s.deadline > 0 then
-   description = "The countdown has started. Keep studying the points."
+   description = "The countdown has started. Use Next point to review the markers."
   elseif s.active and s.study then
    main = if s.study.voted then "" else "Ready"
    description = if s.study.voted then "You’re ready. Waiting for other players."
@@ -262,14 +281,14 @@ local function apply(next: Snapshot)
  state = next
  local changed = old.phase ~= next.phase or old.roundId ~= next.roundId or old.practice ~= next.practice
  if changed then
-  selected, recapRoster = 1,false
+  selected, recapRoster = (if next.phase == "Memory" then 0 else 1),false
   hitVisual, didPlace, pendingPosition, pendingUntil, noAimUntil = nil,false,nil,0,0
   warningBeat = -1
-  turn("Front",true)
+  turn("Front",next.phase ~= "Memory")
   local ids = if next.phase == "Memory" then next.pool elseif next.phase == "Recap" then next.reveal else {}
   PatientView.setStudyFigure(view,next.phase == "Memory" and useHumanFigure)
   PatientView.setMarkers(view,ids)
-  if ids[1] then goPoint(ids[1]) end
+  if next.phase == "Recap" and ids[1] then goPoint(ids[1]) end
   ui.side.CanvasPosition = Vector2.zero
   updateCelebration()
  elseif old.region ~= next.region then
@@ -385,7 +404,7 @@ end
 local helpPages = {
  {
   title = "How to play",
-  body = [[Study the red acupoints before the round. Select a card to turn the figure to the right view.
+  body = [[Study the red acupoints before the round. Start with the full figure, then choose First point or a card to zoom in. Use Overview to return.
 
 Select Ready when you’re done. When half the players are ready, everyone gets a final 10 seconds to study.]],
  },
@@ -463,10 +482,20 @@ local function switchStudyFigure()
  if state.phase ~= "Memory" then return end
  useHumanFigure = not useHumanFigure
  PatientView.setStudyFigure(view,useHumanFigure)
- PatientView.setMarkers(view,state.pool)
+ PatientView.setMarkers(view,studyMarkerIds())
  renderText()
 end
 ui.figure.Activated:Connect(switchStudyFigure)
+ui.overview.Activated:Connect(function()
+ if state.phase ~= "Memory" then return end
+ focusStudyPoint(0)
+ renderText()
+end)
+ui.nextPoint.Activated:Connect(function()
+ if state.phase ~= "Memory" or #state.pool == 0 then return end
+ focusStudyPoint(selected % #state.pool + 1)
+ renderText()
+end)
 ui.previous.Activated:Connect(function() orbit(-1) end)
 ui.nextView.Activated:Connect(function() orbit(1) end)
 ui.place.Activated:Connect(function() send() end)
@@ -635,7 +664,10 @@ RunService.RenderStepped:Connect(function(dt)
  ui.previous.Text = if compact then "‹" else "Q  ‹"
  ui.nextView.Text = if compact then "›" else "›  E"
 
- local dest = PatientView.desired(ui.viewport,s.region,side)
+ local point = if s.phase == "Memory" then Data.byId[s.pool[selected] or ""]
+  elseif s.phase == "Recap" then Data.byId[s.reveal[selected] or ""] else nil
+ local displayRegion = if s.phase == "Memory" and point then point.region else s.region
+ local dest = PatientView.desired(ui.viewport,displayRegion,side)
  local elapsed = t - cameraAt
  if cameraFrom and elapsed < .45 and not reduceMotion then
   local alpha = 1 - (1-math.clamp(elapsed/.45,0,1))^2
@@ -657,18 +689,18 @@ RunService.RenderStepped:Connect(function(dt)
   cursor = origin + Vector2.new(math.clamp(p.X,0,boxSize.X),math.clamp(p.Y,0,boxSize.Y))
  end
  local aimPart = if canAim then currentHit() else nil
- if ui.viewport.Visible then PatientView.draw(view,pose,s.region,if aimPart then aimPart.region else nil,s.phase=="Memory",side) end
+ if ui.viewport.Visible then PatientView.draw(view,pose,displayRegion,if aimPart then aimPart.region else nil,s.phase=="Memory",side) end
 
  local locked = t < s.lockUntil
- local point = if s.phase == "Memory" then Data.byId[s.pool[selected] or ""]
-  elseif s.phase == "Recap" then Data.byId[s.reveal[selected] or ""] else nil
  local markerAt = if point then view.markerPositions[point.id] else nil
  local mark = if point and markerAt and Rig.pointView(point)==side then project(markerAt) else nil
  markerTag.Visible = mark ~= nil
  if mark and point then
   markerTag.Text = point.name
-  local maxX = (ui.viewport.AbsoluteSize.X/ui.scale.Scale)-markerTag.Size.X.Offset-8
-  markerTag.Position = UDim2.fromOffset(math.clamp(mark.X/ui.scale.Scale+12,0,math.max(0,maxX)),mark.Y/ui.scale.Scale-16)
+  local at, viewportSize = mark/ui.scale.Scale,ui.viewport.AbsoluteSize/ui.scale.Scale
+  local width = markerTag.Size.X.Offset
+  local x = if at.X+width+14 <= viewportSize.X-8 then at.X+14 else at.X-width-14
+  markerTag.Position = UDim2.fromOffset(math.clamp(x,0,math.max(0,viewportSize.X-width)),at.Y-16)
  end
 
  ui.reticle.Visible = canAim and cursor ~= nil
