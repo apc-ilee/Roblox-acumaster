@@ -9,9 +9,10 @@ local Rig = require(Shared.Rig)
 local HitRules = require(Shared.HitRules)
 local Protocol = require(Shared.Protocol)
 local Rules = require(script.Parent.Rules)
+local Rankings = require(script.Parent.Rankings)
 
 type Entry = {
- player: Player, qi: number, alive: boolean, delta: number, cheers: number,
+ player: Player, qi: number, earned: number, alive: boolean, delta: number, cheers: number,
  status: Protocol.Status, step: number, region: string?, lockUntil: number,
  lastInput: number, studyReady: boolean?, finish: number?, message: string,
 }
@@ -110,6 +111,8 @@ local function snapshot(player: Player): Protocol.Snapshot
   study = {ready = ready, required = required, voted = entry ~= nil and entry.studyReady == true}
  end
  return {
+  rankings = if phase == "Lobby" or phase == "Intermission" or phase == "Victory" then Rankings.snapshot() else nil,
+  matchPoints = if phase == "Victory" and entry then entry.earned else nil,
   study = study, revision = revision, phase = phase, deadline = deadline, roundStart = roundStart,
   round = round, roundId = roundId, active = entry ~= nil and entry.alive, dynamic = round >= 6 and not overtime,
   overtime = overtime, pool = if phase == "Memory" then pool else {},
@@ -132,6 +135,7 @@ end
 
 local function transition(nextPhase: Protocol.Phase, duration: number)
  phase = nextPhase
+ if nextPhase == "Intermission" then Rankings.requestRefresh() end
  deadline = if duration > 0 then now() + duration else 0
  if nextPhase == "Action" then roundStart = deadline - duration end
  publish(nil)
@@ -191,7 +195,7 @@ end
 local function validate(player: Player, payload: any): (Entry?, number)
  local t = now()
  local entry = entries[player.UserId]
- if phase ~= "Action" or t >= deadline or not entry or not entry.alive
+ if phase ~= "Action" or winner or t >= deadline or not entry or not entry.alive
   or (entry.status ~= "Checking" and entry.status ~= "Aiming")
   or t < entry.lockUntil or t - entry.lastInput < 0.085 then return nil, t end
  entry.lastInput = t
@@ -235,7 +239,10 @@ needle.OnServerEvent:Connect(function(player: Player, payload: any)
   entry.region, entry.status, entry.message = nil, "Checking", "First point placed! Find the next region."
  else
   entry.finish, entry.status, entry.message = t, "Placed", "Placement confirmed."
-  if overtime and not winner then winner = player.DisplayName end
+  if overtime then
+   entry.earned += 2
+   winner = player.DisplayName
+  end
  end
  publish(player)
 end)
@@ -281,6 +288,9 @@ get.OnServerInvoke = function(player: Player)
  return snapshot(player)
 end
 network.Parent = ReplicatedStorage
+Rankings.start(function()
+ if phase == "Lobby" or phase == "Intermission" or phase == "Victory" then publish(nil) end
+end)
 
 Players.PlayerAdded:Connect(function()
  publish(nil)
@@ -304,7 +314,7 @@ local function startRound()
   e.finish, e.delta, e.message = nil, 0, ""
  end
  matchMessage = if overtime then "First valid placement wins." else ""
- transition("Action", if overtime then Protocol.overtime elseif round == 1 then Protocol.firstAction else Protocol.action)
+ transition("Action", Protocol.action)
 end
 
 local function roundDone(): boolean
@@ -327,6 +337,7 @@ local function resolve()
  disputed = survivors == 0 and #results > 1
  for _, award in ipairs(awards) do
   local e = entries[award.id]
+  e.earned += math.max(award.delta,0)
   e.qi = if disputed then 1 else award.qi
   e.alive, e.delta = e.qi > 0, award.delta
   e.message = award.reason
@@ -354,7 +365,7 @@ while true do
  for i = 1, math.min(Protocol.capacity, #list) do
   local p = list[i]
   table.insert(roster, p.UserId)
-  entries[p.UserId] = {player = p, qi = 3, alive = true, delta = 0, cheers = 0, status = "Checking",
+  entries[p.UserId] = {player = p, qi = 3, earned = 0, alive = true, delta = 0, cheers = 0, status = "Checking",
    step = 1, lockUntil = 0, lastInput = 0, message = ""}
  end
  expand(3)
@@ -374,7 +385,13 @@ while true do
   end
   startRound()
   waitPhase(roundDone)
-  if winner or #contestants() <= 1 then break end
+  if winner then break end
+  local stillPlaying = contestants()
+  if #stillPlaying <= 1 then
+   local last = stillPlaying[1]
+   if last and last.finish then last.earned += 2 end
+   break
+  end
   if overtime then
    for _, e in ipairs(contestants()) do
     e.status, e.message = "Timeout", "Time expired. A new sudden-death point is coming."
@@ -387,7 +404,12 @@ while true do
  end
  local remaining = contestants()
  if not winner and #remaining == 1 then winner = remaining[1].player.DisplayName end
- for _, e in pairs(entries) do e.message = "" end
+ local scores: {[number]: number} = {}
+ for id, e in pairs(entries) do
+  e.message = ""
+  if e.earned > 0 then scores[id] = e.earned end
+ end
+ Rankings.submit(scores,os.time())
  matchMessage = if winner then "Last practitioner standing." else "The clinic has closed this match."
  transition("Victory", Protocol.victory)
  waitPhase(nil)

@@ -14,11 +14,14 @@ local HitRules = require(Shared.HitRules)
 local Protocol = require(Shared.Protocol)
 local ClinicUI = require(script.Parent.ClinicUI)
 local PatientView = require(script.Parent.PatientView)
+local RankingsView = require(script.Parent.RankingsView)
+local Fireworks = require(script.Parent.Fireworks)
 
 type Snapshot = Protocol.Snapshot
 local player = Players.LocalPlayer
 local ui = ClinicUI.build(player:WaitForChild("PlayerGui") :: PlayerGui)
 local view = PatientView.build(ui.viewport)
+local ranks = RankingsView.build(ui.scene)
 local T = ClinicUI.theme
 local wire = ReplicatedStorage:WaitForChild(Protocol.folder)
 local receiver = wire:WaitForChild("Snapshot") :: RemoteEvent
@@ -155,6 +158,11 @@ local function setQueue(ready: boolean)
  queueRemote:FireServer(ready)
 end
 
+local function updateCelebration()
+ ranks.sparks:ClearAllChildren()
+ if state.phase == "Victory" and not state.practice and state.winner then Fireworks.play(ranks.sparks,reduceMotion) end
+end
+
 local function renderText()
  local s = state
  local phase = s.phase
@@ -171,6 +179,10 @@ local function renderText()
  ui.sceneTitle.Text = if phase == "Memory" then (if useHumanFigure then "HUMAN FIGURE" else "BLOCK FIGURE")
   elseif phase == "Action" and s.region then "PRECISION VIEW"
   elseif phase == "Recap" then "MERIDIAN ATLAS" else "PATIENT VIEW"
+ RankingsView.render(ranks,s)
+ local patientVisible = not ranks.board.Visible
+ ui.viewport.Visible,ui.cameraControls.Visible = patientVisible,patientVisible
+ ui.sceneTitle.Visible,ui.viewTitle.Visible = patientVisible,patientVisible
  ui.figure.Visible = phase == "Memory"
  ui.figure.Text = if useHumanFigure then "Show blocks" else "Show human"
  if phase == "Lobby" or phase == "Intermission" then
@@ -218,12 +230,18 @@ local function renderText()
   main, alt = if s.practice then "Next lesson" else "Clinic roster", if s.practice then "Exit lesson" else "Review points"
   if not s.practice and recapRoster then ids,showRoster = nil,true end
  elseif phase == "Victory" then
-  heading, caption = s.winner or (if s.practice then "Practice complete" else "Clinic closed"), if s.practice then "SOLO PRACTICE" else "MATCH COMPLETE"
-  description = if s.practice then "You practiced front, back, sole, and crown placements." else s.message
-  if s.practice then main,alt = "Try again","Exit lesson" else showRoster = true end
+  if s.practice then
+   heading, caption = "Practice complete", "SOLO PRACTICE"
+   description = "You practiced front, back, sole, and crown placements."
+   main, alt = "Try again", "Exit lesson"
+  else
+   heading, caption, showRoster = "Match scores", "", true
+   if s.matchPoints then description = string.format("You earned %d ranking points this match.",s.matchPoints) end
+  end
  end
 
  ui.overline.Text,ui.heading.Text,ui.description.Text = caption,heading,description
+ ui.overline.Visible,ui.description.Visible = caption ~= "",description ~= ""
  ui.action.Text,ui.aux.Text = main,alt
  ui.action.Visible,ui.aux.Visible = main ~= "",alt ~= ""
  ui.controls.Visible = ui.action.Visible or ui.aux.Visible
@@ -254,6 +272,7 @@ local function apply(next: Snapshot)
   PatientView.setMarkers(view,ids)
   if ids[1] then goPoint(ids[1]) end
   ui.side.CanvasPosition = Vector2.zero
+  updateCelebration()
  elseif old.region ~= next.region then
   turn("Front",true)
   pendingUntil = 0
@@ -438,6 +457,7 @@ end)
 ui.motion.Activated:Connect(function()
  reduceMotion = not reduceMotion
  ui.motion.Text = if reduceMotion then "Motion: Low" else "Motion: Full"
+ if state.phase == "Victory" then updateCelebration() end
 end)
 local function switchStudyFigure()
  if state.phase ~= "Memory" then return end
@@ -485,6 +505,7 @@ end)
 
 local function point2(p: Vector3): Vector2 return Vector2.new(p.X,p.Y) end
 local function inside(point: Vector2): boolean
+ if not ui.viewport.Visible then return false end
  local rel = point - ui.viewport.AbsolutePosition
  return rel.X >= 0 and rel.Y >= 0 and rel.X <= ui.viewport.AbsoluteSize.X and rel.Y <= ui.viewport.AbsoluteSize.Y
 end
@@ -595,12 +616,13 @@ RunService.RenderStepped:Connect(function(dt)
  if resize ~= size then
   resize = size
   compact = ClinicUI.layout(ui,size)
+  RankingsView.layout(ranks,ui.scene)
   renderText()
  end
  local t = clock()
  local s = state
  local remaining = math.max(0,s.deadline-t)
- local duration = if s.phase == "Action" then (if s.overtime then Protocol.overtime elseif s.round == 1 then Protocol.firstAction else Protocol.action)
+ local duration = if s.phase == "Action" then Protocol.action
   elseif s.phase == "Memory" then Protocol.memory elseif s.phase == "Intermission" then Protocol.intermission
   elseif s.phase == "Recap" then Protocol.recap else Protocol.victory
  local urgent = s.phase == "Action" and s.deadline > 0 and remaining <= 3
@@ -634,7 +656,7 @@ RunService.RenderStepped:Connect(function(dt)
   cursor = origin + Vector2.new(math.clamp(p.X,0,boxSize.X),math.clamp(p.Y,0,boxSize.Y))
  end
  local aimPart = if canAim then currentHit() else nil
- PatientView.draw(view,pose,s.region,if aimPart then aimPart.region else nil,s.phase=="Memory",side)
+ if ui.viewport.Visible then PatientView.draw(view,pose,s.region,if aimPart then aimPart.region else nil,s.phase=="Memory",side) end
 
  local locked = t < s.lockUntil
  local point = if s.phase == "Memory" then Data.byId[s.pool[selected] or ""]
