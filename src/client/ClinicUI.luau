@@ -7,6 +7,7 @@ local Theme = table.freeze({
  button=hex("2A4042"), cream=hex("F7EDDC"), muted=hex("AFBFBA"), faint=hex("879F9C"),
  gold=hex("FAC773"), goldDark=hex("3B2D1D"), mint=hex("82E0BE"), red=hex("FF9A83"), point=hex("FF7281"),
 })
+local symptomGold, symptomMint, symptomUrgent = hex("FFE3AA"), hex("BAF4E9"), hex("59162D")
 local textScale = 2
 local font = Enum.Font.Gotham
 local bold = Enum.Font.GothamBold
@@ -150,6 +151,22 @@ local function build(parent: PlayerGui)
  local function stack(item: GuiObject, order: number, height: number)
   item.Size, item.LayoutOrder = UDim2.new(1,0,0,height),order
  end
+ local symptom = panel(side,0,0,0,0,symptomGold,9)
+ symptom.Visible,symptom.AutomaticSize = false,Enum.AutomaticSize.Y
+ stack(symptom,0,0)
+ local symptomEdge = border(symptom,Theme.gold,2)
+ local symptomInset = Instance.new("UIPadding")
+ symptomInset.PaddingTop,symptomInset.PaddingBottom = UDim.new(0,11),UDim.new(0,15)
+ symptomInset.PaddingLeft,symptomInset.PaddingRight = UDim.new(0,15),UDim.new(0,15)
+ symptomInset.Parent = symptom
+ local symptomFlow = Instance.new("UIListLayout")
+ symptomFlow.Padding,symptomFlow.SortOrder,symptomFlow.Parent = UDim.new(0,6),Enum.SortOrder.LayoutOrder,symptom
+ local symptomLabel = label(symptom,"",0,0,0,0,11,Theme.bg,mono)
+ stack(symptomLabel,1,26)
+ local symptomText = label(symptom,"",0,0,0,0,18,Theme.bg,bold)
+ wrap(symptomText)
+ stack(symptomText,2,0)
+ symptomText.AutomaticSize = Enum.AutomaticSize.Y
  local overline = label(side,"CASE NOTES",0,0,0,0,11,Theme.gold,mono)
  stack(overline,1,30)
  local heading = label(side,"",0,0,0,0,26,Theme.cream,bold)
@@ -210,6 +227,7 @@ local function build(parent: PlayerGui)
   grid=grid,scan=scan,sceneTitle=sceneTitle,viewTitle=viewTitle,markerLayer=markerLayer,reticle=reticle,
   reticleStroke=reticleStroke,dot=dot,halo=halo,hitStroke=hitStroke,flashStroke=flashStroke,cameraControls=cameraControls,
   previous=previous,nextView=nextView,direction=direction,figure=figure,back=back,place=place,feedback=feedback,
+  symptom=symptom,symptomEdge=symptomEdge,symptomLabel=symptomLabel,symptomText=symptomText,
   side=side,overline=overline,heading=heading,description=description,action=action,aux=aux,controls=controls,
   separator=separator,listHeading=listHeading,list=list,footer=footer,shade=shade,modal=modal,modalHead=modalHead,helpStep=helpStep,helpScroll=helpScroll,
   instructions=instructions,helpClose=helpClose,helpBack=helpBack,helpNext=helpNext,
@@ -217,6 +235,21 @@ local function build(parent: PlayerGui)
 end
 
 export type UI = typeof(build(nil :: any))
+
+local function paintSymptom(ui: UI, step: number, urgent: boolean)
+ local fill = if urgent then symptomUrgent elseif step % 2 == 0 then symptomMint else symptomGold
+ if ui.symptom.BackgroundColor3 == fill then return end
+ local text = if urgent then Theme.cream else Theme.bg
+ ui.symptom.BackgroundColor3, ui.symptomEdge.Color = fill, if urgent then Theme.red elseif step % 2 == 0 then Theme.mint else Theme.gold
+ ui.symptomLabel.TextColor3, ui.symptomText.TextColor3 = text, text
+end
+
+local function setSymptom(ui: UI, clue: string?, step: number, count: number)
+ ui.symptom.Visible = clue ~= nil and clue ~= ""
+ if not ui.symptom.Visible then return end
+ ui.symptomLabel.Text = if count > 1 then string.format("SYMPTOM %d OF %d",step,count) else "CURRENT SYMPTOM"
+ ui.symptomText.Text = clue or ""
+end
 
 local function layout(ui: UI, size: Vector2): boolean
  local compact = size.X/size.Y < 1.30
@@ -260,6 +293,7 @@ local function layout(ui: UI, size: Vector2): boolean
  position(ui.back,sw-(if compact then 225 else 301),sh-56,78,46)
 
  position(ui.side,px,py,pw,ph)
+ ui.symptomText.TextSize = (if compact then 16 else 18)*textScale
  ui.heading.TextSize = (if compact then 22 else 26)*textScale
  ui.description.TextSize = (if compact then 13 else 15)*textScale
  position(ui.footer,0,h-34,w,32)
@@ -277,4 +311,5 @@ local function layout(ui: UI, size: Vector2): boolean
 end
 
 return table.freeze({theme=Theme,build=build,layout=layout,label=label,panel=panel,button=button,
- position=position,border=border,bold=bold,mono=mono,textScale=textScale})
+ position=position,border=border,bold=bold,mono=mono,textScale=textScale,
+ setSymptom=setSymptom,paintSymptom=paintSymptom})

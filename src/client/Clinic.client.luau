@@ -205,18 +205,16 @@ local function renderText()
    description = "The players are studying. The countdown starts when half are ready."
   end
  elseif phase == "Action" then
-  local count = #s.clues
-  caption = if count > 1 then string.format("POINT %d OF %d", s.step, count) else "PATIENT REPORT"
+  caption = if active() then "" else "PATIENT REPORT"
   if not s.active then
    heading, description = "Spectating", "Follow the live case and cheer for a practitioner. The next match starts after the ceremony."
    showRoster = true
   else
    heading = if s.status == "Placed" then "Placement confirmed" elseif s.status == "Missed" then "Off target"
     elseif s.region then "Place the needle" else "Find the region"
-   description = s.clues[s.step] or ""
    if s.practice then
     local point = Data.byId[lesson[lessonIndex]]
-    description = point.cn.." · "..point.name.."  /  "..point.location.."\n"..description
+    description = point.cn.." · "..point.name.."  /  "..point.location
     alt = "Exit lesson"
    else
     showRoster = true
@@ -250,6 +248,7 @@ local function renderText()
  ui.aux.Size = ui.action.Size
  ui.aux.Position = UDim2.new(if split then .5 else 0,if split then 4 else 0,0,0)
  local canPlace = active()
+ ClinicUI.setSymptom(ui,if canPlace then s.clues[s.step] else nil,s.step,#s.clues)
  ui.place.Visible,ui.back.Visible = canPlace,canPlace and s.region ~= nil
  ui.place.Text = if s.region then (if compact then "Place" else "Place needle") else (if compact then "Select" else "Select region")
  ui.listHeading.Text = if showRoster then "CLINIC ROSTER" else (if ids then "ACUPOINT CARDS" else "")
@@ -277,6 +276,7 @@ local function apply(next: Snapshot)
   turn("Front",true)
   pendingUntil = 0
  end
+ if next.phase == "Action" and old.step ~= next.step then ui.side.CanvasPosition = Vector2.zero end
  if next.phase == "Action" and (old.message ~= next.message or old.step ~= next.step) then
   if next.status == "Placed" or next.step > old.step then
    hitVisual,didPlace,resultAt = pendingPosition,true,clock()
@@ -626,6 +626,7 @@ RunService.RenderStepped:Connect(function(dt)
   elseif s.phase == "Memory" then Protocol.memory elseif s.phase == "Intermission" then Protocol.intermission
   elseif s.phase == "Recap" then Protocol.recap else Protocol.victory
  local urgent = s.phase == "Action" and s.deadline > 0 and remaining <= 3
+ if ui.symptom.Visible then ClinicUI.paintSymptom(ui,s.step,urgent) end
  ui.timer.Text = if s.deadline > 0 then string.format("%02d",math.ceil(remaining)) else "—"
  ui.timer.TextColor3 = if urgent then T.red else T.gold
  ui.bar.Size = UDim2.fromScale(if s.deadline > 0 then math.clamp(remaining/duration,0,1) else 0,1)
